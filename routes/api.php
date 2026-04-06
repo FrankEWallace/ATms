@@ -5,8 +5,10 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ChannelController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\IntegrationConfigController;
 use App\Http\Controllers\Api\InventoryController;
@@ -96,6 +98,7 @@ Route::prefix('v1')->group(function () {
 
         // Orders
         Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus'])->name('v1.orders.status');
+        Route::post('/orders/{id}/receive', [OrderController::class, 'receive'])->name('v1.orders.receive');
         Route::apiResource('orders', OrderController::class)->names([
             'index'   => 'v1.orders.index',
             'store'   => 'v1.orders.store',
@@ -189,12 +192,31 @@ Route::prefix('v1')->group(function () {
             'destroy' => 'v1.alert-rules.destroy',
         ]);
 
+        // Customers
+        Route::apiResource('customers', CustomerController::class)->names([
+            'index'   => 'v1.customers.index',
+            'store'   => 'v1.customers.store',
+            'show'    => 'v1.customers.show',
+            'update'  => 'v1.customers.update',
+            'destroy' => 'v1.customers.destroy',
+        ]);
+
+        // Expense Categories
+        Route::apiResource('expense-categories', ExpenseCategoryController::class)->names([
+            'index'   => 'v1.expense-categories.index',
+            'store'   => 'v1.expense-categories.store',
+            'show'    => 'v1.expense-categories.show',
+            'update'  => 'v1.expense-categories.update',
+            'destroy' => 'v1.expense-categories.destroy',
+        ]);
+
         // Reports
         Route::prefix('reports')->group(function () {
             Route::get('/summary', [ReportController::class, 'summary'])->name('v1.reports.summary');
             Route::get('/monthly-trend', [ReportController::class, 'monthlyTrend'])->name('v1.reports.monthly-trend');
             Route::get('/expenses-by-category', [ReportController::class, 'expensesByCategory'])->name('v1.reports.expenses-by-category');
             Route::get('/production-by-day', [ReportController::class, 'productionByDay'])->name('v1.reports.production-by-day');
+            Route::get('/customer-summary', [ReportController::class, 'customerSummary'])->name('v1.reports.customer-summary');
         });
 
         // Production Logs

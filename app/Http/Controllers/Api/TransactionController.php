@@ -36,6 +36,18 @@ class TransactionController extends Controller
                 $query->where('category', $request->query('category'));
             }
 
+            if ($request->filled('customer_id')) {
+                $query->where('customer_id', $request->query('customer_id'));
+            }
+
+            if ($request->filled('expense_category_id')) {
+                $query->where('expense_category_id', $request->query('expense_category_id'));
+            }
+
+            if ($request->filled('source')) {
+                $query->where('source', $request->query('source'));
+            }
+
             if ($request->filled('from')) {
                 $query->where('transaction_date', '>=', $request->query('from'));
             }
@@ -56,16 +68,20 @@ class TransactionController extends Controller
     {
         try {
             $validated = $request->validate([
-                'site_id'          => 'required|uuid|exists:sites,id',
-                'reference_no'     => 'nullable|string|max:100',
-                'description'      => 'nullable|string|max:500',
-                'category'         => 'nullable|string|max:100',
-                'type'             => 'required|in:income,expense,refund',
-                'status'           => 'nullable|in:success,pending,refunded,cancelled',
-                'quantity'         => 'nullable|numeric|min:0',
-                'unit_price'       => 'nullable|numeric|min:0',
-                'currency'         => 'nullable|string|size:3',
-                'transaction_date' => 'required|date',
+                'site_id'              => 'required|uuid|exists:sites,id',
+                'customer_id'          => 'nullable|uuid|exists:customers,id',
+                'expense_category_id'  => 'nullable|uuid|exists:expense_categories,id',
+                'inventory_item_id'    => 'nullable|uuid|exists:inventory_items,id',
+                'reference_no'         => 'nullable|string|max:100',
+                'description'          => 'nullable|string|max:500',
+                'category'             => 'nullable|string|max:100',
+                'type'                 => 'required|in:income,expense,refund',
+                'status'               => 'nullable|in:success,pending,refunded,cancelled',
+                'source'               => 'nullable|in:manual,inventory,order',
+                'quantity'             => 'nullable|numeric|min:0',
+                'unit_price'           => 'nullable|numeric|min:0',
+                'currency'             => 'nullable|string|size:3',
+                'transaction_date'     => 'required|date',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);
@@ -100,15 +116,17 @@ class TransactionController extends Controller
 
         try {
             $validated = $request->validate([
-                'reference_no'     => 'nullable|string|max:100',
-                'description'      => 'nullable|string|max:500',
-                'category'         => 'nullable|string|max:100',
-                'type'             => 'sometimes|in:income,expense,refund',
-                'status'           => 'nullable|in:success,pending,refunded,cancelled',
-                'quantity'         => 'nullable|numeric|min:0',
-                'unit_price'       => 'nullable|numeric|min:0',
-                'currency'         => 'nullable|string|size:3',
-                'transaction_date' => 'sometimes|date',
+                'customer_id'          => 'nullable|uuid|exists:customers,id',
+                'expense_category_id'  => 'nullable|uuid|exists:expense_categories,id',
+                'reference_no'         => 'nullable|string|max:100',
+                'description'          => 'nullable|string|max:500',
+                'category'             => 'nullable|string|max:100',
+                'type'                 => 'sometimes|in:income,expense,refund',
+                'status'               => 'nullable|in:success,pending,refunded,cancelled',
+                'quantity'             => 'nullable|numeric|min:0',
+                'unit_price'           => 'nullable|numeric|min:0',
+                'currency'             => 'nullable|string|size:3',
+                'transaction_date'     => 'sometimes|date',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);

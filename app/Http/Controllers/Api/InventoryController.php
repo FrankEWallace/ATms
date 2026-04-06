@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
+use App\Models\Transaction;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -148,8 +149,10 @@ class InventoryController extends Controller
     {
         try {
             $validated = $request->validate([
-                'quantity' => 'required|numeric|min:0.0001',
-                'reason'   => 'nullable|string|max:255',
+                'quantity'            => 'required|numeric|min:0.0001',
+                'reason'              => 'nullable|string|max:255',
+                'customer_id'         => 'nullable|uuid|exists:customers,id',
+                'expense_category_id' => 'nullable|uuid|exists:expense_categories,id',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);
@@ -171,6 +174,27 @@ class InventoryController extends Controller
                 'reason'            => $validated['reason'] ?? 'consumption',
                 'created_by'        => auth()->id(),
             ]);
+
+            // Auto-create financial expense transaction
+            $unitCost = (float) ($item->unit_cost ?? 0);
+            if ($unitCost > 0) {
+                $notes = $validated['reason'] ? ' (' . $validated['reason'] . ')' : '';
+                Transaction::create([
+                    'site_id'             => $item->site_id,
+                    'customer_id'         => $validated['customer_id'] ?? null,
+                    'expense_category_id' => $validated['expense_category_id'] ?? null,
+                    'inventory_item_id'   => $item->id,
+                    'description'         => $item->name . ' usage — ' . $validated['quantity'] . ' ' . ($item->unit ?? 'units') . $notes,
+                    'type'                => 'expense',
+                    'status'              => 'success',
+                    'quantity'            => $validated['quantity'],
+                    'unit_price'          => $unitCost,
+                    'category'            => $item->category,
+                    'transaction_date'    => now()->toDateString(),
+                    'source'              => 'inventory',
+                    'created_by'          => auth()->id(),
+                ]);
+            }
 
             return $this->success($item->fresh());
         } catch (\Throwable $e) {

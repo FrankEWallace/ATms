@@ -15,11 +15,15 @@ class Transaction extends Model
 
     protected $fillable = [
         'site_id',
+        'customer_id',
+        'expense_category_id',
+        'inventory_item_id',
         'reference_no',
         'description',
         'category',
         'type',
         'status',
+        'source',
         'quantity',
         'unit_price',
         'currency',
@@ -37,6 +41,21 @@ class Transaction extends Model
     public function site()
     {
         return $this->belongsTo(Site::class, 'site_id');
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class, 'customer_id');
+    }
+
+    public function expenseCategory()
+    {
+        return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
+    }
+
+    public function inventoryItem()
+    {
+        return $this->belongsTo(InventoryItem::class, 'inventory_item_id');
     }
 
     public function creator()

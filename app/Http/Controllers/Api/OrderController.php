@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
 use App\Models\Order;
+use App\Models\Transaction;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ class OrderController extends Controller
     {
         try {
             $siteId = $request->query('site_id') ?? $request->header('X-Site-Id');
-            $query  = Order::with(['supplier', 'channel', 'items.inventoryItem']);
+            $query  = Order::with(['supplier', 'channel', 'customer', 'items.inventoryItem']);
 
             if ($siteId) {
                 $query->where('site_id', $siteId);
@@ -43,6 +44,7 @@ class OrderController extends Controller
                 'site_id'       => 'required|uuid|exists:sites,id',
                 'supplier_id'   => 'nullable|uuid|exists:suppliers,id',
                 'channel_id'    => 'nullable|uuid|exists:channels,id',
+                'customer_id'   => 'nullable|uuid|exists:customers,id',
                 'order_number'  => 'nullable|string|max:100',
                 'status'        => 'nullable|in:draft,sent,confirmed,received,cancelled',
                 'total_amount'  => 'nullable|numeric|min:0',
@@ -75,7 +77,7 @@ class OrderController extends Controller
                     ]);
                 }
 
-                return $this->created($order->load(['supplier', 'channel', 'items.inventoryItem']));
+                return $this->created($order->load(['supplier', 'channel', 'customer', 'items.inventoryItem']));
             });
         } catch (\Throwable $e) {
             return $this->error('Failed to create order: ' . $e->getMessage(), 500);
@@ -85,7 +87,7 @@ class OrderController extends Controller
     public function show(string $id): JsonResponse
     {
         try {
-            $order = Order::with(['supplier', 'channel', 'items.inventoryItem'])->findOrFail($id);
+            $order = Order::with(['supplier', 'channel', 'customer', 'items.inventoryItem'])->findOrFail($id);
             return $this->success($order);
         } catch (\Throwable $e) {
             return $this->error('Order not found', 404);
@@ -104,6 +106,7 @@ class OrderController extends Controller
             $validated = $request->validate([
                 'supplier_id'   => 'nullable|uuid|exists:suppliers,id',
                 'channel_id'    => 'nullable|uuid|exists:channels,id',
+                'customer_id'   => 'nullable|uuid|exists:customers,id',
                 'order_number'  => 'nullable|string|max:100',
                 'status'        => 'nullable|in:draft,sent,confirmed,received,cancelled',
                 'total_amount'  => 'nullable|numeric|min:0',
@@ -117,7 +120,7 @@ class OrderController extends Controller
 
         try {
             $order->update($validated);
-            return $this->success($order->load(['supplier', 'channel', 'items.inventoryItem']));
+            return $this->success($order->load(['supplier', 'channel', 'customer', 'items.inventoryItem']));
         } catch (\Throwable $e) {
             return $this->error('Failed to update order: ' . $e->getMessage(), 500);
         }
@@ -152,36 +155,99 @@ class OrderController extends Controller
 
         try {
             return DB::transaction(function () use ($order, $validated) {
-                $newStatus = $validated['status'];
-
-                // If transitioning to "received", update inventory quantities
-                if ($newStatus === 'received' && $order->status !== 'received') {
+                if ($validated['status'] === 'received' && $order->status !== 'received') {
                     $order->update(['received_date' => now()->toDateString()]);
-
-                    foreach ($order->items as $orderItem) {
-                        if ($orderItem->inventory_item_id) {
-                            $invItem = InventoryItem::find($orderItem->inventory_item_id);
-                            if ($invItem) {
-                                $invItem->increment('quantity', $orderItem->quantity);
-
-                                InventoryTransaction::create([
-                                    'inventory_item_id' => $invItem->id,
-                                    'site_id'           => $order->site_id,
-                                    'quantity_change'   => $orderItem->quantity,
-                                    'reason'            => 'Order received: ' . ($order->order_number ?? $order->id),
-                                    'created_by'        => auth()->id(),
-                                ]);
-                            }
-                        }
-                    }
+                    $this->processReceived($order);
                 }
 
-                $order->update(['status' => $newStatus]);
+                $order->update(['status' => $validated['status']]);
 
-                return $this->success($order->load(['supplier', 'channel', 'items.inventoryItem']));
+                return $this->success($order->load(['supplier', 'channel', 'customer', 'items.inventoryItem']));
             });
         } catch (\Throwable $e) {
             return $this->error('Failed to update order status: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * POST /orders/{id}/receive
+     * Dedicated receive endpoint called by the frontend REST path.
+     */
+    public function receive(string $id): JsonResponse
+    {
+        try {
+            $order = Order::with('items.inventoryItem')->findOrFail($id);
+        } catch (\Throwable $e) {
+            return $this->error('Order not found', 404);
+        }
+
+        if ($order->status === 'received') {
+            return $this->error('Order is already received', 422);
+        }
+
+        try {
+            return DB::transaction(function () use ($order) {
+                $order->update([
+                    'status'        => 'received',
+                    'received_date' => now()->toDateString(),
+                ]);
+
+                $this->processReceived($order);
+
+                return $this->success($order->load(['supplier', 'channel', 'customer', 'items.inventoryItem']));
+            });
+        } catch (\Throwable $e) {
+            return $this->error('Failed to receive order: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Increment inventory quantities and create source:'order' expense transactions
+     * for each line item. Called when an order transitions to "received".
+     */
+    private function processReceived(Order $order): void
+    {
+        $today = now()->toDateString();
+
+        foreach ($order->items as $orderItem) {
+            if (! $orderItem->inventory_item_id) {
+                continue;
+            }
+
+            $invItem = InventoryItem::find($orderItem->inventory_item_id);
+            if (! $invItem) {
+                continue;
+            }
+
+            // Increment inventory stock
+            $invItem->increment('quantity', $orderItem->quantity);
+
+            // Log inventory movement
+            InventoryTransaction::create([
+                'inventory_item_id' => $invItem->id,
+                'site_id'           => $order->site_id,
+                'quantity_change'   => $orderItem->quantity,
+                'reason'            => 'Order received: ' . ($order->order_number ?? $order->id),
+                'created_by'        => auth()->id(),
+            ]);
+
+            // Auto-create financial expense transaction
+            if ((float) $orderItem->unit_price > 0) {
+                Transaction::create([
+                    'site_id'           => $order->site_id,
+                    'customer_id'       => $order->customer_id,
+                    'inventory_item_id' => $invItem->id,
+                    'description'       => 'PO received — ' . $invItem->name . ' × ' . $orderItem->quantity . ' ' . ($invItem->unit ?? 'units'),
+                    'type'              => 'expense',
+                    'status'            => 'success',
+                    'quantity'          => $orderItem->quantity,
+                    'unit_price'        => $orderItem->unit_price,
+                    'category'          => $invItem->category,
+                    'transaction_date'  => $today,
+                    'source'            => 'order',
+                    'created_by'        => auth()->id(),
+                ]);
+            }
         }
     }
 }

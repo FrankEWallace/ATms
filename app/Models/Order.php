@@ -17,6 +17,7 @@ class Order extends Model
         'site_id',
         'supplier_id',
         'channel_id',
+        'customer_id',
         'order_number',
         'status',
         'total_amount',
@@ -51,6 +52,11 @@ class Order extends Model
     public function items()
     {
         return $this->hasMany(OrderItem::class, 'order_id');
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class, 'customer_id');
     }
 
     public function creator()
