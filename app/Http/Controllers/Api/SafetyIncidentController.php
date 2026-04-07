@@ -20,7 +20,10 @@ class SafetyIncidentController extends Controller
             $query  = SafetyIncident::with('reporter');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('severity')) {
@@ -57,6 +60,9 @@ class SafetyIncidentController extends Controller
         }
 
         try {
+            // Any worker or above can report a safety incident — safety first.
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $validated['reported_by'] = auth()->id();
             $incident = SafetyIncident::create($validated);
             return $this->created($incident->load('reporter'));
@@ -69,6 +75,7 @@ class SafetyIncidentController extends Controller
     {
         try {
             $incident = SafetyIncident::with('reporter')->findOrFail($id);
+            $this->authorizeForSite($incident->site_id);
             return $this->success($incident);
         } catch (\Throwable $e) {
             return $this->error('Safety incident not found', 404);
@@ -82,6 +89,8 @@ class SafetyIncidentController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Safety incident not found', 404);
         }
+
+        $this->authorizeForSite($incident->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -107,6 +116,7 @@ class SafetyIncidentController extends Controller
     {
         try {
             $incident = SafetyIncident::findOrFail($id);
+            $this->authorizeForSite($incident->site_id, 'admin');
             $incident->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
@@ -121,6 +131,8 @@ class SafetyIncidentController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Safety incident not found', 404);
         }
+
+        $this->authorizeForSite($incident->site_id, 'site_manager');
 
         try {
             $incident->update(['resolved_at' => now()]);

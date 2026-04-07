@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class InventoryController extends Controller
@@ -23,7 +24,10 @@ class InventoryController extends Controller
             $query = InventoryItem::with('supplier');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('category')) {
@@ -65,6 +69,8 @@ class InventoryController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
+
             $item = InventoryItem::create($validated);
             return $this->created($item->load('supplier'));
         } catch (\Throwable $e) {
@@ -76,6 +82,7 @@ class InventoryController extends Controller
     {
         try {
             $item = InventoryItem::with('supplier', 'transactions')->findOrFail($id);
+            $this->authorizeForSite($item->site_id);
             return $this->success($item);
         } catch (\Throwable $e) {
             return $this->error('Inventory item not found', 404);
@@ -89,6 +96,8 @@ class InventoryController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Inventory item not found', 404);
         }
+
+        $this->authorizeForSite($item->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -117,6 +126,7 @@ class InventoryController extends Controller
     {
         try {
             $item = InventoryItem::findOrFail($id);
+            $this->authorizeForSite($item->site_id, 'admin');
             $item->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
@@ -129,12 +139,13 @@ class InventoryController extends Controller
         try {
             $siteId = $request->query('site_id') ?? $request->header('X-Site-Id');
 
-            $query = InventoryItem::select('category')
-                ->whereNotNull('category')
-                ->distinct();
+            $query = InventoryItem::select('category')->whereNotNull('category')->distinct();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             $categories = $query->pluck('category')->sort()->values();
@@ -160,43 +171,49 @@ class InventoryController extends Controller
 
         try {
             $item = InventoryItem::findOrFail($id);
+            $this->authorizeForSite($item->site_id, 'worker');
 
             if ($item->quantity < $validated['quantity']) {
                 return $this->error('Insufficient stock', 400);
             }
 
-            $item->decrement('quantity', $validated['quantity']);
+            // All three writes are atomic — a failure after decrement must not
+            // leave stock reduced with no corresponding audit or expense record.
+            $item = DB::transaction(function () use ($item, $validated) {
+                $item->decrement('quantity', $validated['quantity']);
 
-            InventoryTransaction::create([
-                'inventory_item_id' => $item->id,
-                'site_id'           => $item->site_id,
-                'quantity_change'   => -$validated['quantity'],
-                'reason'            => $validated['reason'] ?? 'consumption',
-                'created_by'        => auth()->id(),
-            ]);
-
-            // Auto-create financial expense transaction
-            $unitCost = (float) ($item->unit_cost ?? 0);
-            if ($unitCost > 0) {
-                $notes = $validated['reason'] ? ' (' . $validated['reason'] . ')' : '';
-                Transaction::create([
-                    'site_id'             => $item->site_id,
-                    'customer_id'         => $validated['customer_id'] ?? null,
-                    'expense_category_id' => $validated['expense_category_id'] ?? null,
-                    'inventory_item_id'   => $item->id,
-                    'description'         => $item->name . ' usage — ' . $validated['quantity'] . ' ' . ($item->unit ?? 'units') . $notes,
-                    'type'                => 'expense',
-                    'status'              => 'success',
-                    'quantity'            => $validated['quantity'],
-                    'unit_price'          => $unitCost,
-                    'category'            => $item->category,
-                    'transaction_date'    => now()->toDateString(),
-                    'source'              => 'inventory',
-                    'created_by'          => auth()->id(),
+                InventoryTransaction::create([
+                    'inventory_item_id' => $item->id,
+                    'site_id'           => $item->site_id,
+                    'quantity_change'   => -$validated['quantity'],
+                    'reason'            => $validated['reason'] ?? 'consumption',
+                    'created_by'        => auth()->id(),
                 ]);
-            }
 
-            return $this->success($item->fresh());
+                $unitCost = (float) ($item->unit_cost ?? 0);
+                if ($unitCost > 0) {
+                    $notes = $validated['reason'] ? ' (' . $validated['reason'] . ')' : '';
+                    Transaction::create([
+                        'site_id'             => $item->site_id,
+                        'customer_id'         => $validated['customer_id'] ?? null,
+                        'expense_category_id' => $validated['expense_category_id'] ?? null,
+                        'inventory_item_id'   => $item->id,
+                        'description'         => $item->name . ' usage — ' . $validated['quantity'] . ' ' . ($item->unit ?? 'units') . $notes,
+                        'type'                => 'expense',
+                        'status'              => 'success',
+                        'quantity'            => $validated['quantity'],
+                        'unit_price'          => $unitCost,
+                        'category'            => $item->category,
+                        'transaction_date'    => now()->toDateString(),
+                        'source'              => 'inventory',
+                        'created_by'          => auth()->id(),
+                    ]);
+                }
+
+                return $item->fresh();
+            });
+
+            return $this->success($item);
         } catch (\Throwable $e) {
             return $this->error('Failed to record consumption: ' . $e->getMessage(), 500);
         }
@@ -215,6 +232,7 @@ class InventoryController extends Controller
 
         try {
             $item = InventoryItem::findOrFail($id);
+            $this->authorizeForSite($item->site_id, 'site_manager');
 
             $item->increment('quantity', $validated['quantity']);
 
@@ -236,6 +254,7 @@ class InventoryController extends Controller
     {
         try {
             $item = InventoryItem::findOrFail($id);
+            $this->authorizeForSite($item->site_id);
             $txns = $item->transactions()->orderBy('created_at', 'desc')->get();
             return $this->success($txns);
         } catch (\Throwable $e) {

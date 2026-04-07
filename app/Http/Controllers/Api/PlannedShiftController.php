@@ -20,7 +20,10 @@ class PlannedShiftController extends Controller
             $query  = PlannedShift::with('worker');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('worker_id')) {
@@ -57,6 +60,8 @@ class PlannedShiftController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
+
             $validated['created_by'] = auth()->id();
             $shift = PlannedShift::create($validated);
             return $this->created($shift->load('worker'));
@@ -69,6 +74,7 @@ class PlannedShiftController extends Controller
     {
         try {
             $shift = PlannedShift::with('worker')->findOrFail($id);
+            $this->authorizeForSite($shift->site_id);
             return $this->success($shift);
         } catch (\Throwable $e) {
             return $this->error('Planned shift not found', 404);
@@ -82,6 +88,8 @@ class PlannedShiftController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Planned shift not found', 404);
         }
+
+        $this->authorizeForSite($shift->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -107,6 +115,7 @@ class PlannedShiftController extends Controller
     {
         try {
             $shift = PlannedShift::findOrFail($id);
+            $this->authorizeForSite($shift->site_id, 'admin');
             $shift->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\ProductionLog;
 use App\Models\ShiftRecord;
 use App\Models\Transaction;
@@ -115,9 +116,10 @@ class ReportController extends Controller
     public function expensesByCategory(Request $request): JsonResponse
     {
         try {
-            $siteId = $request->query('site_id') ?? $request->header('X-Site-Id');
-            $from   = $request->query('from', now()->startOfMonth()->toDateString());
-            $to     = $request->query('to', now()->endOfMonth()->toDateString());
+            $siteId     = $request->query('site_id') ?? $request->header('X-Site-Id');
+            $from       = $request->query('from', now()->startOfMonth()->toDateString());
+            $to         = $request->query('to', now()->endOfMonth()->toDateString());
+            $customerId = $request->query('customer_id');
 
             $query = Transaction::select(
                 'category',
@@ -134,6 +136,10 @@ class ReportController extends Controller
                 $query->where('site_id', $siteId);
             }
 
+            if ($customerId) {
+                $query->where('customer_id', $customerId);
+            }
+
             $result = $query->get()->map(fn($r) => [
                 'category' => $r->category ?? 'Uncategorized',
                 'total'    => round((float) $r->total, 2),
@@ -143,6 +149,63 @@ class ReportController extends Controller
             return $this->success($result);
         } catch (\Throwable $e) {
             return $this->error('Failed to generate expenses by category: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public function customerSummary(Request $request): JsonResponse
+    {
+        try {
+            $siteId     = $request->query('site_id') ?? $request->header('X-Site-Id');
+            $from       = $request->query('from', now()->startOfMonth()->toDateString());
+            $to         = $request->query('to', now()->endOfMonth()->toDateString());
+            $customerId = $request->query('customer_id');
+
+            $query = Transaction::with(['customer', 'expenseCategory'])
+                ->whereBetween('transaction_date', [$from, $to])
+                ->where('status', '!=', 'cancelled')
+                ->whereNotNull('customer_id');
+
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
+
+            if ($customerId) {
+                $query->where('customer_id', $customerId);
+            }
+
+            $transactions = $query->get();
+
+            $grouped = $transactions->groupBy('customer_id');
+
+            $result = $grouped->map(function ($txs, $custId) {
+                $customer = $txs->first()->customer;
+                $income   = $txs->where('type', 'income')
+                    ->sum(fn($t) => (float) $t->quantity * (float) $t->unit_price);
+                $expenses = $txs->whereIn('type', ['expense', 'refund'])
+                    ->sum(fn($t) => (float) $t->quantity * (float) $t->unit_price);
+
+                $expByCategory = $txs->where('type', 'expense')
+                    ->groupBy(fn($t) => $t->expenseCategory?->name ?? $t->category ?? 'Uncategorized')
+                    ->map(fn($g) => round($g->sum(fn($t) => (float) $t->quantity * (float) $t->unit_price), 2));
+
+                return [
+                    'customer_id'          => $custId,
+                    'customer_name'        => $customer?->name ?? 'Unknown',
+                    'customer_type'        => $customer?->type ?? 'external',
+                    'total_income'         => round($income, 2),
+                    'total_expenses'       => round($expenses, 2),
+                    'net_profit'           => round($income - $expenses, 2),
+                    'transaction_count'    => $txs->count(),
+                    'expenses_by_category' => $expByCategory->map(fn($total, $cat) => [
+                        'category' => $cat,
+                        'total'    => $total,
+                    ])->values(),
+                ];
+            })->values();
+
+            return $this->success($result);
+        } catch (\Throwable $e) {
+            return $this->error('Failed to generate customer summary: ' . $e->getMessage(), 500);
         }
     }
 

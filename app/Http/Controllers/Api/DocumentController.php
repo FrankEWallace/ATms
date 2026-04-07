@@ -21,7 +21,10 @@ class DocumentController extends Controller
             $query  = SiteDocument::with('uploader');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('category')) {
@@ -39,7 +42,7 @@ class DocumentController extends Controller
         try {
             $validated = $request->validate([
                 'site_id'  => 'required|uuid|exists:sites,id',
-                'file'     => 'required|file|max:51200', // 50MB
+                'file'     => 'required|file|max:51200',
                 'name'     => 'nullable|string|max:255',
                 'category' => 'nullable|string|max:100',
             ]);
@@ -48,6 +51,8 @@ class DocumentController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $siteId = $validated['site_id'];
             $file   = $request->file('file');
 
@@ -73,6 +78,7 @@ class DocumentController extends Controller
     {
         try {
             $document = SiteDocument::with('uploader')->findOrFail($id);
+            $this->authorizeForSite($document->site_id);
             return $this->success($document);
         } catch (\Throwable $e) {
             return $this->error('Document not found', 404);
@@ -83,8 +89,8 @@ class DocumentController extends Controller
     {
         try {
             $document = SiteDocument::findOrFail($id);
+            $this->authorizeForSite($document->site_id, 'site_manager');
 
-            // Delete the actual file from storage
             if ($document->storage_path && Storage::disk('public')->exists($document->storage_path)) {
                 Storage::disk('public')->delete($document->storage_path);
             }

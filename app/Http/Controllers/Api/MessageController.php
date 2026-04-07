@@ -20,7 +20,10 @@ class MessageController extends Controller
             $query  = Message::with('sender');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('channel')) {
@@ -31,8 +34,7 @@ class MessageController extends Controller
                 $query->where('created_at', '>', $request->query('after'));
             }
 
-            $limit = (int) ($request->query('limit', 50));
-            $limit = min($limit, 200);
+            $limit = min((int) ($request->query('limit', 50)), 200);
 
             return $this->success(
                 $query->orderBy('created_at', 'desc')->limit($limit)->get()->reverse()->values()
@@ -55,6 +57,8 @@ class MessageController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $validated['sender_id'] = auth()->id();
             $message = Message::create($validated);
             return $this->created($message->load('sender'));

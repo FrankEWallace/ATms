@@ -20,7 +20,10 @@ class ProductionLogController extends Controller
             $query  = ProductionLog::query();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('from')) {
@@ -41,20 +44,24 @@ class ProductionLogController extends Controller
     {
         try {
             $validated = $request->validate([
-                'site_id'      => 'required|uuid|exists:sites,id',
-                'log_date'     => 'required|date',
-                'ore_tonnes'   => 'nullable|numeric|min:0',
-                'waste_tonnes' => 'nullable|numeric|min:0',
-                'grade_g_t'    => 'nullable|numeric|min:0',
-                'water_m3'     => 'nullable|numeric|min:0',
-                'notes'        => 'nullable|string',
+                'site_id'              => 'required|uuid|exists:sites,id',
+                'log_date'             => 'required|date',
+                'ore_tonnes'           => 'nullable|numeric|min:0',
+                'waste_tonnes'         => 'nullable|numeric|min:0',
+                'grade_g_t'            => 'nullable|numeric|min:0',
+                'water_m3'             => 'nullable|numeric|min:0',
+                'notes'                => 'nullable|string',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $validated['created_by'] = auth()->id();
+
+            $validated['log_date'] = date('Y-m-d', strtotime($validated['log_date']));
 
             $log = ProductionLog::updateOrCreate(
                 ['site_id' => $validated['site_id'], 'log_date' => $validated['log_date']],
@@ -72,6 +79,7 @@ class ProductionLogController extends Controller
     {
         try {
             $log = ProductionLog::findOrFail($id);
+            $this->authorizeForSite($log->site_id);
             return $this->success($log);
         } catch (\Throwable $e) {
             return $this->error('Production log not found', 404);
@@ -82,6 +90,7 @@ class ProductionLogController extends Controller
     {
         try {
             $log = ProductionLog::findOrFail($id);
+            $this->authorizeForSite($log->site_id, 'admin');
             $log->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

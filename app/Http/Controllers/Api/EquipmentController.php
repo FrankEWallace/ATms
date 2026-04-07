@@ -20,7 +20,10 @@ class EquipmentController extends Controller
             $query  = Equipment::query();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('status')) {
@@ -55,6 +58,8 @@ class EquipmentController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
+
             $equipment = Equipment::create($validated);
             return $this->created($equipment);
         } catch (\Throwable $e) {
@@ -66,6 +71,7 @@ class EquipmentController extends Controller
     {
         try {
             $equipment = Equipment::findOrFail($id);
+            $this->authorizeForSite($equipment->site_id);
             return $this->success($equipment);
         } catch (\Throwable $e) {
             return $this->error('Equipment not found', 404);
@@ -79,6 +85,8 @@ class EquipmentController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Equipment not found', 404);
         }
+
+        $this->authorizeForSite($equipment->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -106,6 +114,7 @@ class EquipmentController extends Controller
     {
         try {
             $equipment = Equipment::findOrFail($id);
+            $this->authorizeForSite($equipment->site_id, 'admin');
             $equipment->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

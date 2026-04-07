@@ -20,7 +20,10 @@ class ShiftRecordController extends Controller
             $query  = ShiftRecord::with('worker');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('worker_id')) {
@@ -58,6 +61,8 @@ class ShiftRecordController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $record = ShiftRecord::create($validated);
             return $this->created($record->load('worker'));
         } catch (\Throwable $e) {
@@ -69,6 +74,7 @@ class ShiftRecordController extends Controller
     {
         try {
             $record = ShiftRecord::with('worker')->findOrFail($id);
+            $this->authorizeForSite($record->site_id);
             return $this->success($record);
         } catch (\Throwable $e) {
             return $this->error('Shift record not found', 404);
@@ -82,6 +88,8 @@ class ShiftRecordController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Shift record not found', 404);
         }
+
+        $this->authorizeForSite($record->site_id, 'worker');
 
         try {
             $validated = $request->validate([
@@ -107,6 +115,7 @@ class ShiftRecordController extends Controller
     {
         try {
             $record = ShiftRecord::findOrFail($id);
+            $this->authorizeForSite($record->site_id, 'admin');
             $record->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

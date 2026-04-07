@@ -11,6 +11,7 @@ use App\Models\UserSiteRole;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -72,43 +73,45 @@ class AuthController extends Controller
         }
 
         try {
-            // Create user
-            $user = User::create([
-                'name'     => $validated['name'],
-                'email'    => $validated['email'],
-                'password' => Hash::make($validated['password']),
-            ]);
+            // All five writes are atomic — if any step fails, nothing is persisted.
+            [$user, $profile, $org, $site, $token] = DB::transaction(function () use ($validated) {
+                $user = User::create([
+                    'name'     => $validated['name'],
+                    'email'    => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                ]);
 
-            // Create organization
-            $slug = Str::slug($validated['org_name']) . '-' . Str::random(6);
-            $org  = Organization::create([
-                'name' => $validated['org_name'],
-                'slug' => $slug,
-            ]);
+                $slug = Str::slug($validated['org_name']) . '-' . Str::random(6);
+                $org  = Organization::create([
+                    'name' => $validated['org_name'],
+                    'slug' => $slug,
+                ]);
 
-            // Create user profile
-            $profile = UserProfile::create([
-                'id'       => $user->id,
-                'org_id'   => $org->id,
-                'full_name' => $validated['name'],
-            ]);
+                $profile = UserProfile::create([
+                    'id'        => $user->id,
+                    'org_id'    => $org->id,
+                    'full_name' => $validated['name'],
+                ]);
 
-            // Create default site
-            $site = Site::create([
-                'org_id'   => $org->id,
-                'name'     => 'Main Site',
-                'timezone' => 'UTC',
-                'status'   => 'active',
-            ]);
+                $site = Site::create([
+                    'org_id'   => $org->id,
+                    'name'     => 'Main Site',
+                    'timezone' => 'UTC',
+                    'status'   => 'active',
+                ]);
 
-            // Assign admin role
-            UserSiteRole::create([
-                'user_id' => $user->id,
-                'site_id' => $site->id,
-                'role'    => 'admin',
-            ]);
+                UserSiteRole::create([
+                    'user_id' => $user->id,
+                    'site_id' => $site->id,
+                    'role'    => 'admin',
+                ]);
 
-            $token = $user->createToken('api')->plainTextToken;
+                // Token is created inside the transaction so the whole operation
+                // can be confirmed before a token is issued.
+                $token = $user->createToken('api')->plainTextToken;
+
+                return [$user, $profile, $org, $site, $token];
+            });
 
             return $this->created([
                 'token'   => $token,

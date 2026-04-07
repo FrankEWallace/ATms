@@ -21,7 +21,10 @@ class TransactionController extends Controller
             $query = Transaction::query();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('type')) {
@@ -88,6 +91,8 @@ class TransactionController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'worker');
+
             $validated['created_by'] = auth()->id();
             $transaction = Transaction::create($validated);
             return $this->created($transaction);
@@ -100,6 +105,7 @@ class TransactionController extends Controller
     {
         try {
             $transaction = Transaction::findOrFail($id);
+            $this->authorizeForSite($transaction->site_id);
             return $this->success($transaction);
         } catch (\Throwable $e) {
             return $this->error('Transaction not found', 404);
@@ -113,6 +119,8 @@ class TransactionController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Transaction not found', 404);
         }
+
+        $this->authorizeForSite($transaction->site_id, 'worker');
 
         try {
             $validated = $request->validate([
@@ -144,6 +152,7 @@ class TransactionController extends Controller
     {
         try {
             $transaction = Transaction::findOrFail($id);
+            $this->authorizeForSite($transaction->site_id, 'admin');
             $transaction->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
@@ -156,12 +165,13 @@ class TransactionController extends Controller
         try {
             $siteId = $request->query('site_id') ?? $request->header('X-Site-Id');
 
-            $query = Transaction::select('category')
-                ->whereNotNull('category')
-                ->distinct();
+            $query = Transaction::select('category')->whereNotNull('category')->distinct();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             $categories = $query->pluck('category')->sort()->values();

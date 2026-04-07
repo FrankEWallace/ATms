@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Channel;
-use App\Models\UserProfile;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,21 +13,13 @@ class ChannelController extends Controller
 {
     use ApiResponse;
 
-    private function getOrgId(): ?string
-    {
-        $profile = UserProfile::find(auth()->id());
-        return $profile?->org_id;
-    }
-
     public function index(Request $request): JsonResponse
     {
         try {
-            $orgId = $this->getOrgId();
-            $query = Channel::query();
-            if ($orgId) {
-                $query->where('org_id', $orgId);
-            }
-            return $this->success($query->orderBy('name')->get());
+            $orgId = $this->getAuthUserOrgId();
+            return $this->success(
+                Channel::query()->where('org_id', $orgId)->orderBy('name')->get()
+            );
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch channels: ' . $e->getMessage(), 500);
         }
@@ -38,7 +29,6 @@ class ChannelController extends Controller
     {
         try {
             $validated = $request->validate([
-                'org_id'      => 'nullable|uuid|exists:organizations,id',
                 'name'        => 'required|string|max:255',
                 'type'        => 'nullable|string|max:100',
                 'description' => 'nullable|string',
@@ -48,9 +38,7 @@ class ChannelController extends Controller
         }
 
         try {
-            if (empty($validated['org_id'])) {
-                $validated['org_id'] = $this->getOrgId();
-            }
+            $validated['org_id'] = $this->getAuthUserOrgId();
             $channel = Channel::create($validated);
             return $this->created($channel);
         } catch (\Throwable $e) {
@@ -62,6 +50,7 @@ class ChannelController extends Controller
     {
         try {
             $channel = Channel::findOrFail($id);
+            $this->authorizeForOrg($channel->org_id);
             return $this->success($channel);
         } catch (\Throwable $e) {
             return $this->error('Channel not found', 404);
@@ -75,6 +64,8 @@ class ChannelController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Channel not found', 404);
         }
+
+        $this->authorizeForOrg($channel->org_id);
 
         try {
             $validated = $request->validate([
@@ -98,6 +89,7 @@ class ChannelController extends Controller
     {
         try {
             $channel = Channel::findOrFail($id);
+            $this->authorizeForOrg($channel->org_id);
             $channel->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

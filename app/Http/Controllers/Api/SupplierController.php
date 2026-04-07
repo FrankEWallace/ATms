@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
-use App\Models\UserProfile;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,21 +13,11 @@ class SupplierController extends Controller
 {
     use ApiResponse;
 
-    private function getOrgId(Request $request): ?string
-    {
-        $profile = UserProfile::find(auth()->id());
-        return $profile?->org_id;
-    }
-
     public function index(Request $request): JsonResponse
     {
         try {
-            $orgId = $this->getOrgId($request);
-
-            $query = Supplier::query();
-            if ($orgId) {
-                $query->where('org_id', $orgId);
-            }
+            $orgId = $this->getAuthUserOrgId();
+            $query = Supplier::query()->where('org_id', $orgId);
 
             if ($request->filled('status')) {
                 $query->where('status', $request->query('status'));
@@ -48,7 +37,6 @@ class SupplierController extends Controller
     {
         try {
             $validated = $request->validate([
-                'org_id'       => 'nullable|uuid|exists:organizations,id',
                 'name'         => 'required|string|max:255',
                 'contact_name' => 'nullable|string|max:255',
                 'email'        => 'nullable|email|max:255',
@@ -62,9 +50,8 @@ class SupplierController extends Controller
         }
 
         try {
-            if (empty($validated['org_id'])) {
-                $validated['org_id'] = $this->getOrgId($request);
-            }
+            // Always use the authenticated user's org — never trust client-supplied org_id.
+            $validated['org_id'] = $this->getAuthUserOrgId();
 
             $supplier = Supplier::create($validated);
             return $this->created($supplier);
@@ -77,6 +64,7 @@ class SupplierController extends Controller
     {
         try {
             $supplier = Supplier::findOrFail($id);
+            $this->authorizeForOrg($supplier->org_id);
             return $this->success($supplier);
         } catch (\Throwable $e) {
             return $this->error('Supplier not found', 404);
@@ -90,6 +78,8 @@ class SupplierController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Supplier not found', 404);
         }
+
+        $this->authorizeForOrg($supplier->org_id);
 
         try {
             $validated = $request->validate([
@@ -117,6 +107,7 @@ class SupplierController extends Controller
     {
         try {
             $supplier = Supplier::findOrFail($id);
+            $this->authorizeForOrg($supplier->org_id);
             $supplier->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

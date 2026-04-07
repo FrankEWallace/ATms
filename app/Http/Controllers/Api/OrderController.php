@@ -24,7 +24,10 @@ class OrderController extends Controller
             $query  = Order::with(['supplier', 'channel', 'customer', 'items.inventoryItem']);
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('status')) {
@@ -60,6 +63,8 @@ class OrderController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
+
             return DB::transaction(function () use ($validated) {
                 $items = $validated['items'] ?? [];
                 unset($validated['items']);
@@ -88,6 +93,7 @@ class OrderController extends Controller
     {
         try {
             $order = Order::with(['supplier', 'channel', 'customer', 'items.inventoryItem'])->findOrFail($id);
+            $this->authorizeForSite($order->site_id);
             return $this->success($order);
         } catch (\Throwable $e) {
             return $this->error('Order not found', 404);
@@ -101,6 +107,8 @@ class OrderController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Order not found', 404);
         }
+
+        $this->authorizeForSite($order->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -130,6 +138,7 @@ class OrderController extends Controller
     {
         try {
             $order = Order::findOrFail($id);
+            $this->authorizeForSite($order->site_id, 'admin');
             $order->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
@@ -153,6 +162,8 @@ class OrderController extends Controller
             return $this->error('Order not found', 404);
         }
 
+        $this->authorizeForSite($order->site_id, 'site_manager');
+
         try {
             return DB::transaction(function () use ($order, $validated) {
                 if ($validated['status'] === 'received' && $order->status !== 'received') {
@@ -169,10 +180,6 @@ class OrderController extends Controller
         }
     }
 
-    /**
-     * POST /orders/{id}/receive
-     * Dedicated receive endpoint called by the frontend REST path.
-     */
     public function receive(string $id): JsonResponse
     {
         try {
@@ -180,6 +187,8 @@ class OrderController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Order not found', 404);
         }
+
+        $this->authorizeForSite($order->site_id, 'site_manager');
 
         if ($order->status === 'received') {
             return $this->error('Order is already received', 422);
@@ -201,10 +210,6 @@ class OrderController extends Controller
         }
     }
 
-    /**
-     * Increment inventory quantities and create source:'order' expense transactions
-     * for each line item. Called when an order transitions to "received".
-     */
     private function processReceived(Order $order): void
     {
         $today = now()->toDateString();
@@ -219,10 +224,8 @@ class OrderController extends Controller
                 continue;
             }
 
-            // Increment inventory stock
             $invItem->increment('quantity', $orderItem->quantity);
 
-            // Log inventory movement
             InventoryTransaction::create([
                 'inventory_item_id' => $invItem->id,
                 'site_id'           => $order->site_id,
@@ -231,7 +234,6 @@ class OrderController extends Controller
                 'created_by'        => auth()->id(),
             ]);
 
-            // Auto-create financial expense transaction
             if ((float) $orderItem->unit_price > 0) {
                 Transaction::create([
                     'site_id'           => $order->site_id,

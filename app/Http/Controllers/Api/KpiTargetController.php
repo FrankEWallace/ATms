@@ -20,7 +20,10 @@ class KpiTargetController extends Controller
             $query  = KpiTarget::query();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('from')) {
@@ -54,9 +57,9 @@ class KpiTargetController extends Controller
         }
 
         try {
-            $validated['created_by'] = auth()->id();
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
 
-            // Normalize to first of month
+            $validated['created_by'] = auth()->id();
             $validated['month'] = date('Y-m-01', strtotime($validated['month']));
 
             $kpi = KpiTarget::updateOrCreate(
@@ -75,6 +78,7 @@ class KpiTargetController extends Controller
     {
         try {
             $kpi = KpiTarget::findOrFail($id);
+            $this->authorizeForSite($kpi->site_id);
             return $this->success($kpi);
         } catch (\Throwable $e) {
             return $this->error('KPI target not found', 404);
@@ -85,6 +89,7 @@ class KpiTargetController extends Controller
     {
         try {
             $kpi = KpiTarget::findOrFail($id);
+            $this->authorizeForSite($kpi->site_id, 'admin');
             $kpi->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

@@ -20,7 +20,10 @@ class WorkerController extends Controller
             $query  = Worker::query();
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($request->filled('status')) {
@@ -54,6 +57,8 @@ class WorkerController extends Controller
         }
 
         try {
+            $this->authorizeForSite($validated['site_id'], 'site_manager');
+
             $worker = Worker::create($validated);
             return $this->created($worker);
         } catch (\Throwable $e) {
@@ -65,6 +70,7 @@ class WorkerController extends Controller
     {
         try {
             $worker = Worker::with('shiftRecords')->findOrFail($id);
+            $this->authorizeForSite($worker->site_id);
             return $this->success($worker);
         } catch (\Throwable $e) {
             return $this->error('Worker not found', 404);
@@ -78,6 +84,8 @@ class WorkerController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Worker not found', 404);
         }
+
+        $this->authorizeForSite($worker->site_id, 'site_manager');
 
         try {
             $validated = $request->validate([
@@ -104,6 +112,7 @@ class WorkerController extends Controller
     {
         try {
             $worker = Worker::findOrFail($id);
+            $this->authorizeForSite($worker->site_id, 'admin');
             $worker->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
@@ -115,7 +124,9 @@ class WorkerController extends Controller
     {
         try {
             $worker = Worker::findOrFail($id);
-            $query  = $worker->shiftRecords();
+            $this->authorizeForSite($worker->site_id);
+
+            $query = $worker->shiftRecords();
 
             if ($request->filled('from')) {
                 $query->where('shift_date', '>=', $request->query('from'));

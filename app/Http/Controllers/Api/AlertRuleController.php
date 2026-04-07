@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AlertRule;
-use App\Models\UserProfile;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,21 +13,13 @@ class AlertRuleController extends Controller
 {
     use ApiResponse;
 
-    private function getOrgId(): ?string
-    {
-        $profile = UserProfile::find(auth()->id());
-        return $profile?->org_id;
-    }
-
     public function index(): JsonResponse
     {
         try {
-            $orgId = $this->getOrgId();
-            $query = AlertRule::query();
-            if ($orgId) {
-                $query->where('org_id', $orgId);
-            }
-            return $this->success($query->orderBy('name')->get());
+            $orgId = $this->getAuthUserOrgId();
+            return $this->success(
+                AlertRule::query()->where('org_id', $orgId)->orderBy('name')->get()
+            );
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch alert rules: ' . $e->getMessage(), 500);
         }
@@ -38,7 +29,6 @@ class AlertRuleController extends Controller
     {
         try {
             $validated = $request->validate([
-                'org_id'       => 'nullable|uuid|exists:organizations,id',
                 'name'         => 'required|string|max:255',
                 'metric'       => 'required|string|max:100',
                 'condition'    => 'required|in:gt,lt,eq',
@@ -51,9 +41,7 @@ class AlertRuleController extends Controller
         }
 
         try {
-            if (empty($validated['org_id'])) {
-                $validated['org_id'] = $this->getOrgId();
-            }
+            $validated['org_id'] = $this->getAuthUserOrgId();
             $rule = AlertRule::create($validated);
             return $this->created($rule);
         } catch (\Throwable $e) {
@@ -65,6 +53,7 @@ class AlertRuleController extends Controller
     {
         try {
             $rule = AlertRule::findOrFail($id);
+            $this->authorizeForOrg($rule->org_id);
             return $this->success($rule);
         } catch (\Throwable $e) {
             return $this->error('Alert rule not found', 404);
@@ -78,6 +67,8 @@ class AlertRuleController extends Controller
         } catch (\Throwable $e) {
             return $this->error('Alert rule not found', 404);
         }
+
+        $this->authorizeForOrg($rule->org_id);
 
         try {
             $validated = $request->validate([
@@ -104,6 +95,7 @@ class AlertRuleController extends Controller
     {
         try {
             $rule = AlertRule::findOrFail($id);
+            $this->authorizeForOrg($rule->org_id);
             $rule->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {

@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Campaign;
-use App\Models\UserProfile;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,21 +13,11 @@ class CampaignController extends Controller
 {
     use ApiResponse;
 
-    private function getOrgId(): ?string
-    {
-        $profile = UserProfile::find(auth()->id());
-        return $profile?->org_id;
-    }
-
     public function index(Request $request): JsonResponse
     {
         try {
-            $orgId = $this->getOrgId();
-            $query = Campaign::query();
-
-            if ($orgId) {
-                $query->where('org_id', $orgId);
-            }
+            $orgId = $this->getAuthUserOrgId();
+            $query = Campaign::query()->where('org_id', $orgId);
 
             if ($request->filled('status')) {
                 $query->where('status', $request->query('status'));
@@ -44,13 +33,12 @@ class CampaignController extends Controller
     {
         try {
             $validated = $request->validate([
-                'org_id'       => 'nullable|uuid|exists:organizations,id',
-                'title'        => 'required|string|max:255',
-                'description'  => 'nullable|string',
-                'status'       => 'nullable|in:draft,active,completed,cancelled',
-                'start_date'   => 'nullable|date',
-                'end_date'     => 'nullable|date|after_or_equal:start_date',
-                'target_sites' => 'nullable|array',
+                'title'          => 'required|string|max:255',
+                'description'    => 'nullable|string',
+                'status'         => 'nullable|in:draft,active,completed,cancelled',
+                'start_date'     => 'nullable|date',
+                'end_date'       => 'nullable|date|after_or_equal:start_date',
+                'target_sites'   => 'nullable|array',
                 'target_sites.*' => 'uuid',
             ]);
         } catch (ValidationException $e) {
@@ -58,9 +46,7 @@ class CampaignController extends Controller
         }
 
         try {
-            if (empty($validated['org_id'])) {
-                $validated['org_id'] = $this->getOrgId();
-            }
+            $validated['org_id']     = $this->getAuthUserOrgId();
             $validated['created_by'] = auth()->id();
             $campaign = Campaign::create($validated);
             return $this->created($campaign);
@@ -73,6 +59,7 @@ class CampaignController extends Controller
     {
         try {
             $campaign = Campaign::findOrFail($id);
+            $this->authorizeForOrg($campaign->org_id);
             return $this->success($campaign);
         } catch (\Throwable $e) {
             return $this->error('Campaign not found', 404);
@@ -87,14 +74,16 @@ class CampaignController extends Controller
             return $this->error('Campaign not found', 404);
         }
 
+        $this->authorizeForOrg($campaign->org_id);
+
         try {
             $validated = $request->validate([
-                'title'        => 'sometimes|string|max:255',
-                'description'  => 'nullable|string',
-                'status'       => 'nullable|in:draft,active,completed,cancelled',
-                'start_date'   => 'nullable|date',
-                'end_date'     => 'nullable|date',
-                'target_sites' => 'nullable|array',
+                'title'          => 'sometimes|string|max:255',
+                'description'    => 'nullable|string',
+                'status'         => 'nullable|in:draft,active,completed,cancelled',
+                'start_date'     => 'nullable|date',
+                'end_date'       => 'nullable|date',
+                'target_sites'   => 'nullable|array',
                 'target_sites.*' => 'uuid',
             ]);
         } catch (ValidationException $e) {
@@ -113,6 +102,7 @@ class CampaignController extends Controller
     {
         try {
             $campaign = Campaign::findOrFail($id);
+            $this->authorizeForOrg($campaign->org_id);
             $campaign->delete();
             return $this->success(['message' => 'Deleted successfully']);
         } catch (\Throwable $e) {
