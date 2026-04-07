@@ -23,7 +23,9 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SafetyIncidentController;
 use App\Http\Controllers\Api\ShiftRecordController;
 use App\Http\Controllers\Api\SupplierController;
+use App\Http\Controllers\Api\SupportController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\UserManagementController;
 use App\Http\Controllers\Api\WorkerController;
 use Illuminate\Support\Facades\Route;
 
@@ -48,15 +50,32 @@ Route::prefix('v1')->group(function () {
             Route::get('/me', [AuthController::class, 'me'])->name('v1.auth.me');
         });
 
-        // Organization
+        // Organization — both path styles supported:
+        //   /organization/    (canonical, no ID needed — derives from auth token)
+        //   /org/{id}         (alias used by frontend services)
         Route::prefix('organization')->group(function () {
             Route::get('/', [OrganizationController::class, 'show'])->name('v1.organization.show');
             Route::put('/', [OrganizationController::class, 'update'])->name('v1.organization.update');
             Route::post('/logo', [OrganizationController::class, 'uploadLogo'])->name('v1.organization.logo');
         });
+        Route::prefix('org/{id}')->group(function () {
+            Route::get('/', [OrganizationController::class, 'show'])->name('v1.org.show');
+            Route::put('/', [OrganizationController::class, 'update'])->name('v1.org.update');
+            Route::post('/logo', [OrganizationController::class, 'uploadLogo'])->name('v1.org.logo');
+        });
+
+        // User management (team / roles)
+        Route::get('/org-users', [UserManagementController::class, 'orgUsers'])->name('v1.org-users.index');
+        Route::put('/user-site-roles', [UserManagementController::class, 'updateRole'])->name('v1.user-site-roles.update');
+        Route::delete('/user-site-roles', [UserManagementController::class, 'removeFromSite'])->name('v1.user-site-roles.destroy');
+        Route::post('/invite-user', [UserManagementController::class, 'inviteUser'])->name('v1.invite-user');
+
+        // Support
+        Route::post('/support/message', [SupportController::class, 'message'])->name('v1.support.message');
 
         // Inventory
         Route::get('/inventory/categories', [InventoryController::class, 'categories'])->name('v1.inventory.categories');
+        Route::get('/inventory/consumption', [InventoryController::class, 'consumptionRates'])->name('v1.inventory.consumption');
         Route::post('/inventory/{id}/consume', [InventoryController::class, 'consume'])->name('v1.inventory.consume');
         Route::post('/inventory/{id}/restock', [InventoryController::class, 'restock'])->name('v1.inventory.restock');
         Route::get('/inventory/{id}/transactions', [InventoryController::class, 'transactions'])->name('v1.inventory.item-transactions');
@@ -97,6 +116,7 @@ Route::prefix('v1')->group(function () {
         ]);
 
         // Orders
+        Route::get('/orders/{id}/items', [OrderController::class, 'items'])->name('v1.orders.items');
         Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus'])->name('v1.orders.status');
         Route::post('/orders/{id}/receive', [OrderController::class, 'receive'])->name('v1.orders.receive');
         Route::apiResource('orders', OrderController::class)->names([
@@ -148,11 +168,12 @@ Route::prefix('v1')->group(function () {
             'destroy' => 'v1.campaigns.destroy',
         ]);
 
-        // Notifications
+        // Notifications — accept POST or PUT for mark-read (frontend uses POST)
         Route::prefix('notifications')->group(function () {
             Route::get('/', [NotificationController::class, 'index'])->name('v1.notifications.index');
-            Route::put('/{id}/read', [NotificationController::class, 'markRead'])->name('v1.notifications.mark-read');
-            Route::put('/mark-all-read', [NotificationController::class, 'markAllRead'])->name('v1.notifications.mark-all-read');
+            Route::match(['post', 'put'], '/{id}/read', [NotificationController::class, 'markRead'])->name('v1.notifications.mark-read');
+            Route::match(['post', 'put'], '/read-all', [NotificationController::class, 'markAllRead'])->name('v1.notifications.read-all');
+            Route::match(['post', 'put'], '/mark-all-read', [NotificationController::class, 'markAllRead'])->name('v1.notifications.mark-all-read');
         });
 
         // Equipment

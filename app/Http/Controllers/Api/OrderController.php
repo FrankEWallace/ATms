@@ -211,6 +211,17 @@ class OrderController extends Controller
         }
     }
 
+    public function items(string $id): JsonResponse
+    {
+        try {
+            $order = Order::findOrFail($id);
+            $this->authorizeForSite($order->site_id);
+            return $this->success($order->items()->with('inventoryItem')->get());
+        } catch (\Throwable $e) {
+            return $this->error('Order not found', 404);
+        }
+    }
+
     private function processReceived(Order $order): void
     {
         $today = now()->toDateString();

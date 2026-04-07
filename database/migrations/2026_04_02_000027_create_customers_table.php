@@ -21,7 +21,7 @@ return new class extends Migration
             $table->date('contract_end')->nullable();
             $table->decimal('daily_rate', 15, 4)->nullable();
             $table->text('notes')->nullable();
-            $table->enum('status', ['active', 'inactive', 'completed'])->default('active');
+            $table->enum('status', ['prospect', 'active', 'inactive', 'completed'])->default('active');
             $table->timestamp('created_at')->useCurrent();
             $table->timestamp('updated_at')->useCurrent()->useCurrentOnUpdate();
 

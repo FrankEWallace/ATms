@@ -52,8 +52,11 @@ class OrganizationController extends Controller
             $validated = $request->validate([
                 'name'                   => 'sometimes|string|max:255',
                 'slug'                   => 'sometimes|string|max:100|unique:organizations,slug,' . $org->id,
+                'logo_url'               => 'sometimes|nullable|url',
                 'weekly_report_enabled'  => 'sometimes|boolean',
                 'weekly_report_email'    => 'nullable|email',
+                'disabled_modules'       => 'sometimes|array',
+                'disabled_modules.*'     => 'string|max:100',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);
@@ -70,8 +73,9 @@ class OrganizationController extends Controller
     public function uploadLogo(Request $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'logo' => 'required|image|max:5120', // 5MB
+            $request->validate([
+                'file' => 'required_without:logo|image|max:5120',
+                'logo' => 'required_without:file|image|max:5120',
             ]);
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), 422);
@@ -91,7 +95,7 @@ class OrganizationController extends Controller
                 }
             }
 
-            $path    = $request->file('logo')->store('logos', 'public');
+            $path    = ($request->hasFile('file') ? $request->file('file') : $request->file('logo'))->store('logos', 'public');
             $logoUrl = Storage::disk('public')->url($path);
 
             $org->update(['logo_url' => $logoUrl]);

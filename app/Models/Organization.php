@@ -19,10 +19,12 @@ class Organization extends Model
         'logo_url',
         'weekly_report_enabled',
         'weekly_report_email',
+        'disabled_modules',
     ];
 
     protected $casts = [
         'weekly_report_enabled' => 'boolean',
+        'disabled_modules'      => 'array',
         'created_at'            => 'datetime',
     ];
 

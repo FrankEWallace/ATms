@@ -249,6 +249,42 @@ class InventoryController extends Controller
         }
     }
 
+    /**
+     * GET /inventory/consumption?site_id=
+     * Returns average daily consumption rate (units/day over the past 30 days)
+     * keyed by inventory_item_id.
+     */
+    public function consumptionRates(Request $request): JsonResponse
+    {
+        try {
+            $siteId = $request->query('site_id') ?? $request->header('X-Site-Id');
+
+            $query = \App\Models\InventoryTransaction::select(
+                'inventory_item_id',
+                DB::raw('SUM(ABS(quantity_change)) as consumed')
+            )
+            ->where('quantity_change', '<', 0)
+            ->where('created_at', '>=', now()->subDays(30));
+
+            if ($siteId) {
+                $this->authorizeForSite($siteId);
+                $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
+            }
+
+            $rows  = $query->groupBy('inventory_item_id')->get();
+            $rates = [];
+            foreach ($rows as $row) {
+                $rates[$row->inventory_item_id] = round((float) $row->consumed / 30, 6);
+            }
+
+            return $this->success($rates);
+        } catch (\Throwable $e) {
+            return $this->error('Failed to calculate consumption rates: ' . $e->getMessage(), 500);
+        }
+    }
+
     public function transactions(Request $request, string $id): JsonResponse
     {
         try {

@@ -15,6 +15,7 @@ return new class extends Migration
             $table->string('logo_url')->nullable();
             $table->boolean('weekly_report_enabled')->default(false);
             $table->string('weekly_report_email')->nullable();
+            $table->json('disabled_modules')->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
     }
