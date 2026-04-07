@@ -23,13 +23,18 @@ class ReportController extends Controller
             $from   = $request->query('from', now()->startOfMonth()->toDateString());
             $to     = $request->query('to', now()->endOfMonth()->toDateString());
 
+            if ($siteId) {
+                $this->authorizeForSite($siteId);
+                $siteScope = fn($q) => $q->where('site_id', $siteId);
+            } else {
+                $siteIds   = $this->getUserSiteIds();
+                $siteScope = fn($q) => $q->whereIn('site_id', $siteIds);
+            }
+
             $query = Transaction::query()
                 ->whereBetween('transaction_date', [$from, $to])
                 ->where('status', '!=', 'cancelled');
-
-            if ($siteId) {
-                $query->where('site_id', $siteId);
-            }
+            $siteScope($query);
 
             $transactions = $query->get();
 
@@ -39,17 +44,13 @@ class ReportController extends Controller
 
             // Shift count
             $shiftQuery = ShiftRecord::whereBetween('shift_date', [$from, $to]);
-            if ($siteId) {
-                $shiftQuery->where('site_id', $siteId);
-            }
+            $siteScope($shiftQuery);
             $shiftCount  = $shiftQuery->count();
             $totalHours  = $shiftQuery->sum('hours_worked');
 
             // Production summary
             $prodQuery = ProductionLog::whereBetween('log_date', [$from, $to]);
-            if ($siteId) {
-                $prodQuery->where('site_id', $siteId);
-            }
+            $siteScope($prodQuery);
             $totalOre   = $prodQuery->sum('ore_tonnes');
             $totalWaste = $prodQuery->sum('waste_tonnes');
 
@@ -90,7 +91,10 @@ class ReportController extends Controller
             ->orderBy('month');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             $rows = $query->get();
@@ -133,7 +137,10 @@ class ReportController extends Controller
             ->orderByDesc('total');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($customerId) {
@@ -166,7 +173,10 @@ class ReportController extends Controller
                 ->whereNotNull('customer_id');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             if ($customerId) {
@@ -220,7 +230,10 @@ class ReportController extends Controller
                 ->orderBy('log_date');
 
             if ($siteId) {
+                $this->authorizeForSite($siteId);
                 $query->where('site_id', $siteId);
+            } else {
+                $query->whereIn('site_id', $this->getUserSiteIds());
             }
 
             $logs = $query->get([

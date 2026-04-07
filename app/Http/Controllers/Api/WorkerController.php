@@ -34,7 +34,8 @@ class WorkerController extends Controller
                 $query->where('department', $request->query('department'));
             }
 
-            return $this->success($query->orderBy('full_name')->get());
+            $perPage = min((int) ($request->query('per_page', 100)), 200);
+            return $this->paginated($query->orderBy('full_name')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch workers: ' . $e->getMessage(), 500);
         }
@@ -136,7 +137,8 @@ class WorkerController extends Controller
                 $query->where('shift_date', '<=', $request->query('to'));
             }
 
-            return $this->success($query->orderBy('shift_date', 'desc')->get());
+            $perPage = min((int) ($request->query('per_page', 50)), 200);
+            return $this->paginated($query->orderBy('shift_date', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch shift records: ' . $e->getMessage(), 500);
         }

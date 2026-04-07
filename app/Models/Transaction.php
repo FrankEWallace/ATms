@@ -13,6 +13,8 @@ class Transaction extends Model
 
     public $timestamps = false;
 
+    protected $appends = ['amount'];
+
     protected $fillable = [
         'site_id',
         'customer_id',

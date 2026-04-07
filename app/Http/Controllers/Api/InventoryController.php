@@ -42,9 +42,8 @@ class InventoryController extends Controller
                 });
             }
 
-            $items = $query->orderBy('name')->get();
-
-            return $this->success($items);
+            $perPage = min((int) ($request->query('per_page', 100)), 200);
+            return $this->paginated($query->orderBy('name')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch inventory: ' . $e->getMessage(), 500);
         }

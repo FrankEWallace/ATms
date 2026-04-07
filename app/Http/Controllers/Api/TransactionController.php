@@ -59,9 +59,8 @@ class TransactionController extends Controller
                 $query->where('transaction_date', '<=', $request->query('to'));
             }
 
-            $transactions = $query->orderBy('transaction_date', 'desc')->get();
-
-            return $this->success($transactions);
+            $perPage = min((int) ($request->query('per_page', 50)), 200);
+            return $this->paginated($query->orderBy('transaction_date', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch transactions: ' . $e->getMessage(), 500);
         }

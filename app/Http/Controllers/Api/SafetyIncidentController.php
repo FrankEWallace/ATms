@@ -38,7 +38,8 @@ class SafetyIncidentController extends Controller
                 $query->whereNull('resolved_at');
             }
 
-            return $this->success($query->orderBy('created_at', 'desc')->get());
+            $perPage = min((int) ($request->query('per_page', 50)), 200);
+            return $this->paginated($query->orderBy('created_at', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch safety incidents: ' . $e->getMessage(), 500);
         }

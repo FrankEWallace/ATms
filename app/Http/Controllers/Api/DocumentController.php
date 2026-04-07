@@ -31,7 +31,8 @@ class DocumentController extends Controller
                 $query->where('category', $request->query('category'));
             }
 
-            return $this->success($query->orderBy('created_at', 'desc')->get());
+            $perPage = min((int) ($request->query('per_page', 50)), 200);
+            return $this->paginated($query->orderBy('created_at', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch documents: ' . $e->getMessage(), 500);
         }

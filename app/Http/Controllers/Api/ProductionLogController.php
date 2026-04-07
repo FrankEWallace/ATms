@@ -34,7 +34,8 @@ class ProductionLogController extends Controller
                 $query->where('log_date', '<=', $request->query('to'));
             }
 
-            return $this->success($query->orderBy('log_date', 'desc')->get());
+            $perPage = min((int) ($request->query('per_page', 90)), 200);
+            return $this->paginated($query->orderBy('log_date', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch production logs: ' . $e->getMessage(), 500);
         }

@@ -34,7 +34,8 @@ class OrderController extends Controller
                 $query->where('status', $request->query('status'));
             }
 
-            return $this->success($query->orderBy('created_at', 'desc')->get());
+            $perPage = min((int) ($request->query('per_page', 50)), 200);
+            return $this->paginated($query->orderBy('created_at', 'desc')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch orders: ' . $e->getMessage(), 500);
         }

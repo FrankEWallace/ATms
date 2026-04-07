@@ -35,9 +35,8 @@ class CustomerController extends Controller
                 $query->where('type', $request->query('type'));
             }
 
-            $customers = $query->orderBy('name')->get();
-
-            return $this->success($customers);
+            $perPage = min((int) ($request->query('per_page', 100)), 200);
+            return $this->paginated($query->orderBy('name')->paginate($perPage));
         } catch (\Throwable $e) {
             return $this->error('Failed to fetch customers: ' . $e->getMessage(), 500);
         }
